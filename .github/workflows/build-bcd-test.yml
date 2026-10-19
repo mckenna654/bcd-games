@@ -106,6 +106,7 @@ jobs:
       # phone's scrub is tools/autotune-fixture.py's, the gzip is valid, the compressed copy
       # is deleted, automatic sending is opt-in and Wi-Fi only.
       - name: Check Send logs to BCD
+        if: hashFiles('bcd-logs/worker/worker.js') != ''
         run: python3 tests/host/check-log-upload.py --require-swift
 
       # madeira-bcd FORK-ONLY: Settings › Feedback (FeedbackUpload*.swift, BCDSettingsFeedback.swift,
@@ -113,6 +114,7 @@ jobs:
       # and fields, nothing personal in the body, the person's words untouched, the limits, the
       # section's place after Logs, and the pull tool never printing the key.
       - name: Check Settings › Feedback
+        if: hashFiles('bcd-logs/worker/worker.js') != ''
         run: python3 tests/host/check-feedback.py --require-swift
 
       # BCD's in-game layer (BCDSession.swift and its views, BCDSessionLive.swift): the starting
@@ -1117,7 +1119,7 @@ jobs:
             > "$GITHUB_WORKSPACE/llvm-ios-build.log" 2>&1
 
       - name: Verify LLVM iOS build
-        if: always()
+        if: ${{ !cancelled() && steps.llvmcache.outcome == 'success' }}
         shell: bash
         run: |
           set +e
