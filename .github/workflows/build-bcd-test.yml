@@ -1194,6 +1194,19 @@ jobs:
       # (Apple's agreement, app/Madeira/d3d12/NOTICE.txt); build/madeira-d3d12/deps.sh
       # checks both against their pinned hashes. A missing or mismatched converter
       # would build the stub that draws nothing in any D3D12 game, so fail instead.
+      - name: Restore pinned iOS Metal Shader Converter library
+        shell: bash
+        run: |
+          set -euo pipefail
+          # BCD's public snapshot omits this inherited binary. Use its exact
+          # upstream base revision and keep BCD's original integrity check.
+          DEST=app/Madeira/d3d12/libmetalirconverter.dylib
+          mkdir -p "$(dirname "$DEST")"
+          curl -fL --retry 3 --retry-delay 5 \
+            https://raw.githubusercontent.com/willfaust/Madeira/279fd0f83170425db002fe25d6bd62f6355f497d/app/Madeira/d3d12/libmetalirconverter.dylib \
+            -o "$DEST"
+          echo "073f903be98e973ff38f4d79f2c48d61ef938754a77b1caedda79c9f05a068c2  $DEST" | shasum -a 256 -c -
+
       - name: Locate Metal Shader Converter headers
         shell: bash
         run: |
