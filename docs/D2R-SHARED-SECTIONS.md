@@ -108,3 +108,39 @@ Run `python3 tests/host/check-fault-loop-progress.py` for the sanitized counter
 checks. The guest exception regression now also handles 96 distinct intentional
 `int3` sites, directly and in a child; all must complete. Its handler resumes
 only after traps in that test function. D2R still requires a new device run.
+
+## Follow-up: inaccessible x64 thread entry points
+
+The next device session (20 October, 18:17) confirms that the previous detector
+change lets startup progress through hundreds of guest breakpoints. The new
+failure is a native read in `arm64x_check_call`: it inspects D2R's entry point
+while the remapped page has no access. The read faults in native ntdll. The guest
+hook then receives that native context, and the next fault resumes two bytes
+into the ARM64 instruction. BlizzardError.exe opens after the unhandled access
+violation. The logs do not establish why the loader made the entry page
+inaccessible, so this change does not relax that protection.
+
+The Wine companion adds a fallback for the optional x64 code probe. On iOS,
+a read access violation inside assembly-labelled probe bounds, outside emulator
+execution, completes the existing exit-thunk selection and resumes the native
+caller with the native NtContinue syscall. The emulator then attempts the guest
+address, where normal guest fault handling can apply. Bitmap lookups, unrelated
+native PCs, writes, instruction-fetch faults, guard faults and pre-initialisation
+paths retain their exception handling. A failed native continuation leaves the
+original exception context intact. Readable targets keep the existing fast path.
+No FEX source is modified.
+
+Run `python3 tests/host/check-ec-probe-fallback.py --runtime` after rebuilding
+ntdll. Sanitized checks cover the recovered register state and exclusions; the
+runtime check derives probe bounds from compiler symbols and verifies that the
+bundled probe and exit instructions match that contract. It does not execute
+the iOS bridge.
+
+The guest regression now also starts a normal readable x64 thread, then creates
+a thread at a deliberately PAGE_NOACCESS code page. Its handler requires the
+exception address and RIP to name the guest entry, restores executable access,
+and retries without changing RIP. The thread must return the expected value,
+with exactly one handled fault. All tests repeat in a child process. An
+unexpected native context fails the test instead of skipping an instruction.
+This candidate still needs the iPhone regression and D2R launch test; successful
+host checks and IPA compilation alone do not establish D2R compatibility.

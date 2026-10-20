@@ -32,9 +32,33 @@ __asm__(".text\n"
 static const ULONGLONG cookie = 0x12345678abcdef01ULL;
 static volatile LONG handled;
 static volatile LONG breakpoints;
+static unsigned char *entry_page;
+static SIZE_T entry_size;
+static volatile LONG entry_faults;
 
 static LONG CALLBACK handler(EXCEPTION_POINTERS *p)
 {
+    if (entry_page && p->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+        p->ExceptionRecord->NumberParameters == 2 &&
+        p->ExceptionRecord->ExceptionInformation[1] == (ULONG_PTR)entry_page)
+    {
+        DWORD old;
+        if (p->ExceptionRecord->ExceptionAddress != entry_page ||
+            p->ContextRecord->Rip != (DWORD64)(ULONG_PTR)entry_page ||
+            (p->ExceptionRecord->ExceptionInformation[0] != 0 &&
+             p->ExceptionRecord->ExceptionInformation[0] != 8) ||
+            InterlockedIncrement(&entry_faults) != 1)
+        {
+            printf("FAIL: inaccessible thread entry reported native/wrong context: addr=%p RIP=%llx\n",
+                   p->ExceptionRecord->ExceptionAddress,
+                   (unsigned long long)p->ContextRecord->Rip);
+            return EXCEPTION_CONTINUE_SEARCH;
+        }
+        if (!VirtualProtect(entry_page, entry_size, PAGE_EXECUTE_READ, &old))
+            return EXCEPTION_CONTINUE_SEARCH;
+        /* Retry the real guest instruction, without modifying its RIP. */
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
     if (p->ExceptionRecord->ExceptionCode == EXCEPTION_BREAKPOINT)
     {
         ULONG_PTR at = (ULONG_PTR)p->ExceptionRecord->ExceptionAddress;
@@ -63,6 +87,56 @@ static LONG CALLBACK handler(EXCEPTION_POINTERS *p)
     p->ContextRecord->Rip += 2; /* skip only the intentional UD2 */
     InterlockedIncrement(&handled);
     return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+static DWORD WINAPI readable_thread(void *arg)
+{
+    return (DWORD)(ULONG_PTR)arg;
+}
+
+static int check_thread_entry(void)
+{
+    const DWORD expected = 0x13572468;
+    const unsigned char code[] = {0xb8, 0x68, 0x24, 0x57, 0x13, 0xc3}; /* mov eax,cookie; ret */
+    SYSTEM_INFO info;
+    HANDLE thread;
+    DWORD result = 0, old;
+    int ok;
+
+    /* Control: the existing readable x64 check-call path must keep working. */
+    thread = CreateThread(NULL, 0, readable_thread, (void *)(ULONG_PTR)expected, 0, NULL);
+    if (!thread) return 0;
+    ok = WaitForSingleObject(thread, 15000) == WAIT_OBJECT_0 &&
+         GetExitCodeThread(thread, &result) && result == expected;
+    CloseHandle(thread);
+    if (!ok) return 0;
+    puts("PASS: readable x64 thread entry");
+
+    GetSystemInfo(&info);
+    entry_size = info.dwPageSize;
+    entry_page = VirtualAlloc(NULL, entry_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!entry_page) return 0;
+    memcpy(entry_page, code, sizeof(code));
+    if (!FlushInstructionCache(GetCurrentProcess(), entry_page, sizeof(code)) ||
+        !VirtualProtect(entry_page, entry_size, PAGE_NOACCESS, &old))
+        return 0;
+    thread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(void *)entry_page, NULL, 0, NULL);
+    if (!thread) return 0;
+    result = 0;
+    ok = WaitForSingleObject(thread, 15000) == WAIT_OBJECT_0 &&
+         GetExitCodeThread(thread, &result) && result == expected && entry_faults == 1;
+    CloseHandle(thread);
+    if (!ok)
+    {
+        /* Do not free code or remove the handler under a possibly live thread.
+         * The test process exits as a whole on failure. */
+        printf("FAIL: inaccessible thread entry result=%lx faults=%ld\n", result, entry_faults);
+        ExitProcess(1);
+    }
+    VirtualFree(entry_page, 0, MEM_RELEASE);
+    entry_page = NULL;
+    puts("PASS: inaccessible x64 thread entry faults at guest RIP, restores and resumes");
+    return 1;
 }
 
 static int check_exception(const char *phase)
@@ -118,6 +192,7 @@ static int run_test(void)
         ok = exception_int3_sites(cookie) == cookie && breakpoints == before + 96;
         puts(ok ? "PASS: 96 distinct handled guest breakpoints" : "FAIL: guest breakpoint progress");
     }
+    if (ok) ok = check_thread_entry();
     RemoveVectoredExceptionHandler(veh);
     return ok;
 }
