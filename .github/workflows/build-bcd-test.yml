@@ -42,6 +42,20 @@ jobs:
       # ContentView.swift uses glassEffect(.regular, in:), which needs the
       # iOS 26 SDK. The runner defaults to Xcode 16.4 (iOS 18.5), so pick the
       # newest Xcode installed rather than whatever xcode-select points at.
+      - name: Restore upstream revision fixtures used by overlay tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # BCD's published dependencies use exported histories. These existing
+          # tests compare overlays against older upstream snapshots, not HEAD.
+          # Fetch the exact fixtures without changing any checked-out revision.
+          git -C dxmt fetch --no-tags --depth=1 https://github.com/willfaust/dxmt.git db546ee466ad50ec6463edb5fa183de11db43761
+          git -C dxmt cat-file -e 'db546ee466ad50ec6463edb5fa183de11db43761^{commit}'
+          git -C FEX fetch --no-tags --depth=1 https://github.com/willfaust/FEX.git 3bec2ac498bf78156ab47c0c194b0e8cb2849756
+          git -C FEX cat-file -e '3bec2ac498bf78156ab47c0c194b0e8cb2849756^{commit}'
+          git fetch --no-tags --depth=1 https://github.com/willfaust/Madeira.git 873fe25b010c43252407da79658daed0d06fa725
+          git cat-file -e '873fe25b010c43252407da79658daed0d06fa725^{commit}'
+
       - name: Select newest Xcode
         shell: bash
         run: |
