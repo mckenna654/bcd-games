@@ -1919,6 +1919,9 @@ jobs:
           bash build/wine-pe/build-modules.sh sfc sfc_os tbs
           python3 tests/host/check-guest-section.py
           python3 tests/host/check-x64-image-nocopy.py
+          python3 tests/host/check-ntdll-data-sync.py
+          python3 tests/host/check-iat-sync-owner.py
+          python3 tools/build-ntdll-data-regression.py
           x86_64-w64-mingw32-clang -O2 -Wall -Wextra -Werror tests/x64/shared-section-x64.c -o app/Madeira/arm64ec-windows/shared-section-x64.exe
           # A stale opt-in ntdll variant could bypass the rebuilt section notifier.
           rm -f app/Madeira/arm64ec-windows/ntdll-sync.dll
@@ -2194,6 +2197,16 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Verify D2R runtime fixes in the archived app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=build-out/Madeira.xcarchive/Products/Applications/Madeira.app
+          grep -aFq '[ntdll-data-sync]' "$APP/Madeira"
+          cmp app/Madeira/arm64ec-windows/ntdll.dll "$APP/arm64ec-windows/ntdll.dll"
+          cmp app/Madeira/arm64ec-windows/ntdll-data-exception-x64.exe "$APP/arm64ec-windows/ntdll-data-exception-x64.exe"
+          echo '::notice::archived app contains the native ntdll data fix and matching PE runtime/regression'
+
       # A device run reached DXMT and died there:
       #   err: Failed to create metal view, it seems like your Wine has no
       #        exported symbols needed by DXMT.
@@ -2264,6 +2277,7 @@ jobs:
             d2r-build-commit.txt
             d2r-runtime-sha256.txt
             app/Madeira/arm64ec-windows/shared-section-x64.exe
+            app/Madeira/arm64ec-windows/ntdll-data-exception-x64.exe
           if-no-files-found: error
           retention-days: 7
 
