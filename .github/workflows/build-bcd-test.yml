@@ -91,29 +91,57 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           clang --version
 
+      - name: Reuse validated UI checks for a native fault-handler-only follow-up
+        id: uiscope
+        shell: bash
+        run: |
+          python3 - <<'PYUI'
+          from pathlib import Path
+          import os, subprocess
+          base = '201592310f1665a5c137ecd7941e88a6954be7cf'
+          allowed = {'build/ntdll-unix/signal_arm64_ios.c', 'docs/D2R-SHARED-SECTIONS.md',
+                     'tests/host/check-fault-loop-progress.py', 'tests/x64/ntdll-data-exception-x64.c'}
+          needed = True
+          try:
+              if subprocess.run(['git', 'cat-file', '-e', base + '^{commit}'], capture_output=True).returncode:
+                  subprocess.run(['git', 'fetch', '--no-tags', '--depth=1', 'origin', base], check=True)
+              changed = set(subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD'], text=True).splitlines())
+              needed = not changed.issubset(allowed)
+          except subprocess.CalledProcessError:
+              print('::notice::Could not establish UI input identity; run all UI checks')
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as f:
+              f.write('needed=' + str(needed).lower() + '\n')
+          if not needed:
+              print('::notice::UI source/tests unchanged from successful run 39367607683; reuse those results. All native/runtime checks and full app compilation remain enabled.')
+          PYUI
+
       - name: Check generated settings catalog
         run: python3 tests/host/check-config-catalog.py
 
       # madeira-bcd: the games' built-in recommended settings and where the app
       # applies them (GameRecommendations.swift; owner's decision 2026-10-09).
       - name: Check built-in recommended game settings
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-game-recommendations.py --require-swift
 
       # BCD: the recommended settings online (recommended/recommendations.json, signed with
       # Ed25519; GameRecommendationsSource.swift): the built-in list equals the Swift literals it
       # replaced, signatures, allowed keys, versions, offline and a bad file keep the list in use.
       - name: Check online recommended settings
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-remote-recommendations.py --require-swift
 
       # madeira-bcd: auto-tune (docs/AUTO-TUNE.md): off changes nothing; its hooks, rules,
       # fixtures, engine and app side.
       - name: Check auto-tune
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-autotune.py --require-swift
 
       # What the classic interface did for a person, kept in BCD's (parity audit, 2026-10-18):
       # its alerts reach BCD's interface, background downloads, the Downloads tab's buttons,
       # links, no classic-only place in messages, no "Madeira" in what a person reads.
       - name: Check parity with the classic interface
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-parity.py --require-swift
 
       # madeira-bcd FORK-ONLY: Send logs to BCD (LogUpload*.swift, bcd-logs/worker): the
@@ -135,18 +163,21 @@ jobs:
       # screen, menu button, overlay, in-game menu and key bar in BCD's look, the classic engine
       # calls behind every function, nothing alive while closed, the preview build.
       - name: Check BCD's in-game layer
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-session.py --require-swift --require-preview
 
       # BCD's store-neutral content engine (app/Madeira/BCDContent/, docs/GOG.md): plans, streamed
       # and checked chunks, the journal across a kill, pause and cancel, free space, Range resume,
       # host rotation, the queue (game sessions, one download at a time with Steam), memory.
       - name: Check the content engine
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-content-engine.py --require-swift
 
       # GOG in BCD, milestone 1 (app/Madeira/BCDGOG/): sign-in without a token in any log, the
       # library and its pictures, builds and manifests into a plan, install into C:\GOG Games
       # end to end, the play task as a library entry. Synthetic replies only: GOG is never contacted.
       - name: Check GOG
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-gog.py --require-swift
 
       # madeira-bcd FORK-ONLY: the public alpha IPA is unsigned and carries nothing about the
@@ -158,40 +189,47 @@ jobs:
       # no engine type in the views, sign-out and the Dock reset only after a question, the
       # password never kept or logged, the JIT methods per iOS version, the preview build.
       - name: Check Settings › Accounts, JIT and BCD Dock
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-settings-accounts.py --require-preview
 
       # madeira-bcd: the Dock's Reset removes what one-time installs put into the prefix,
       # and the installs run in a session of their own (DockReset.swift; 2026-10-12).
       - name: Check the Dock's one-time install reset
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-dock-reset.py --require-swift
 
       # Every Play and download of BCD's interface goes the classic library's way (the same
       # launch function and checks for Steam via BCD Dock or directly, programs from Files and the
       # desktop; downloads that keep running in the background on iOS 26; nothing for Epic or GOG).
       - name: Check BCD's game starts and downloads
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-launch.py --require-swift
 
       # BCD's interface is the app's interface (BCDLiveStore.swift, BCDLiveFrontEnd.swift;
       # docs/BCD-UI-ARCHITECTURE.md): the BCD choice and its one-time move, Play through the
       # classic library's function, the in-game flag, setup over it, the preview build.
       - name: Check BCD's interface in the app
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-live.py --require-swift
 
       # BCD's game page (BCDGamePage.swift, docs/BCD-UI-ARCHITECTURE.md): its rules for every
       # state, the questions before what deletes or sends, the controller, cool running and
       # the preview build.
       - name: Check BCD's game page
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-game-page.py --require-swift
 
       # BCD's Library tab and Add a game (BCDLibraryView.swift, BCDAddGame.swift): search, refresh,
       # the Steam sign-in card, how games get into drive_c, the kept filter and order, a program
       # of drive_c added with its name, Add every game, BCD's own screens in the app.
       - name: Check BCD's library and Add a game
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-library.py --require-swift
 
       # BCD's menus (BCDMenu.swift): a game's menu on a long press or X (Play or Install, Game
       # page, Uninstall or Remove after a question), the Library's sort menu, the controller layer.
       - name: Check BCD's menus
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-menu.py --require-swift
 
       # BCD's words: "license" in everything a person reads (identifiers and the credits' legal text stay).
@@ -202,6 +240,7 @@ jobs:
       # the game what the classic one sent and takes the same touches, layouts convert byte for
       # byte, the overlay and the in-game menu show BCD's, the preview build.
       - name: Check BCD's touch controls
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-touch.py --require-swift
 
       # The files BCD writes carry BCD's names (2026-10-18): bcd.cfg (madeira.cfg and the
@@ -209,6 +248,7 @@ jobs:
       # bcd-log.txt, bcd-library.json, bcd-art/, the controls' files, bcd-reset-backup/,
       # BCD-saves-<date>.zip; no source opens a file by an old name.
       - name: Check BCD's file names
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-bcd-file-names.py --require-swift
 
       # BCD's interface: Settings (app/Madeira/BCDSettings*.swift): headers, no engine types in its
@@ -222,6 +262,7 @@ jobs:
       # default; element handlers only (GamepadInput keeps the profile's and its queue); state on
       # the main thread; the earlier third-party manager gone and named nowhere.
       - name: Check BCD's controller hub
+        if: steps.uiscope.outputs.needed != 'false'
         run: python3 tests/host/check-controller-hub.py --require-swift
 
       # --- UNVERIFIED: exact configure invocation for the wine fork's
@@ -1920,6 +1961,7 @@ jobs:
           python3 tests/host/check-guest-section.py
           python3 tests/host/check-x64-image-nocopy.py
           python3 tests/host/check-ntdll-data-sync.py
+          python3 tests/host/check-fault-loop-progress.py
           python3 tests/host/check-iat-sync-owner.py
           python3 tools/build-ntdll-data-regression.py
           x86_64-w64-mingw32-clang -O2 -Wall -Wextra -Werror tests/x64/shared-section-x64.c -o app/Madeira/arm64ec-windows/shared-section-x64.exe
@@ -2203,6 +2245,7 @@ jobs:
           set -euo pipefail
           APP=build-out/Madeira.xcarchive/Products/Applications/Madeira.app
           grep -aFq '[ntdll-data-sync]' "$APP/Madeira"
+          grep -aFq '[fault-progress]' "$APP/Madeira"
           cmp app/Madeira/arm64ec-windows/ntdll.dll "$APP/arm64ec-windows/ntdll.dll"
           cmp app/Madeira/arm64ec-windows/ntdll-data-exception-x64.exe "$APP/arm64ec-windows/ntdll-data-exception-x64.exe"
           echo '::notice::archived app contains the native ntdll data fix and matching PE runtime/regression'
