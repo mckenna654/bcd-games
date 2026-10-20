@@ -91,7 +91,7 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           clang --version
 
-      - name: Reuse validated UI checks for a native fault-handler-only follow-up
+      - name: Reuse validated UI checks for a runtime-only follow-up
         id: uiscope
         shell: bash
         run: |
@@ -100,7 +100,9 @@ jobs:
           import os, subprocess
           base = '201592310f1665a5c137ecd7941e88a6954be7cf'
           allowed = {'build/ntdll-unix/signal_arm64_ios.c', 'docs/D2R-SHARED-SECTIONS.md',
-                     'tests/host/check-fault-loop-progress.py', 'tests/x64/ntdll-data-exception-x64.c'}
+                     'tests/host/check-fault-loop-progress.py', 'tests/x64/ntdll-data-exception-x64.c',
+                     'wine', 'app/Madeira/arm64ec-windows/ntdll.dll',
+                     'tests/host/check-ec-probe-fallback.py'}
           needed = True
           try:
               if subprocess.run(['git', 'cat-file', '-e', base + '^{commit}'], capture_output=True).returncode:
@@ -1962,6 +1964,7 @@ jobs:
           python3 tests/host/check-x64-image-nocopy.py
           python3 tests/host/check-ntdll-data-sync.py
           python3 tests/host/check-fault-loop-progress.py
+          python3 tests/host/check-ec-probe-fallback.py --runtime
           python3 tests/host/check-iat-sync-owner.py
           python3 tools/build-ntdll-data-regression.py
           x86_64-w64-mingw32-clang -O2 -Wall -Wextra -Werror tests/x64/shared-section-x64.c -o app/Madeira/arm64ec-windows/shared-section-x64.exe
@@ -2246,6 +2249,8 @@ jobs:
           APP=build-out/Madeira.xcarchive/Products/Applications/Madeira.app
           grep -aFq '[ntdll-data-sync]' "$APP/Madeira"
           grep -aFq '[fault-progress]' "$APP/Madeira"
+          grep -aFq '[ec-probe-fallback]' "$APP/arm64ec-windows/ntdll.dll"
+          grep -aFq 'inaccessible x64 thread entry faults at guest RIP' "$APP/arm64ec-windows/ntdll-data-exception-x64.exe"
           cmp app/Madeira/arm64ec-windows/ntdll.dll "$APP/arm64ec-windows/ntdll.dll"
           cmp app/Madeira/arm64ec-windows/ntdll-data-exception-x64.exe "$APP/arm64ec-windows/ntdll-data-exception-x64.exe"
           echo '::notice::archived app contains the native ntdll data fix and matching PE runtime/regression'
