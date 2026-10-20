@@ -87,3 +87,24 @@ Dock in a separate fresh session and capture its per-game log.
 Host checks and compilation do not prove the device path or D2R gameplay. This
 follow-up still requires device validation, including another working game.
 No FEX source change or experimental exception-callback retry is included.
+
+## Follow-up: translated breakpoint progress
+
+The subsequent D2R session confirms the data-sync fix preserves the recovery
+callback and guest exception addresses/register state are reconstructed. Startup
+then stops at `[fault-stuck] BREAKING LOOP`: the native detector aborts its main
+thread after repeated host traps at one FEX dispatcher stub. The logged guest
+RIPs keep changing, so the fixed host PC does not establish a stuck guest.
+
+The detector now recognises progress only for Mach breakpoint traps with a
+nonzero guest RIP and an x28 frame matching the thread's registered FEX frame.
+Changed guest RIP resets the repeat counter without suppressing exception
+delivery. Identical guest traps, unknown/native frames, NULL accesses and the
+existing advancing-data-address storm ceiling retain their abort thresholds.
+The key includes the registered TEB and exception type to avoid accumulating
+unrelated faults together. No emulator source is changed.
+
+Run `python3 tests/host/check-fault-loop-progress.py` for the sanitized counter
+checks. The guest exception regression now also handles 96 distinct intentional
+`int3` sites, directly and in a child; all must complete. Its handler resumes
+only after traps in that test function. D2R still requires a new device run.

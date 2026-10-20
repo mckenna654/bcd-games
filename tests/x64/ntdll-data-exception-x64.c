@@ -11,18 +11,43 @@
 #endif
 
 extern ULONGLONG exception_ud2_site(ULONGLONG value);
+extern ULONGLONG exception_int3_sites(ULONGLONG value);
+extern unsigned char exception_int3_end[];
 __asm__(".text\n"
         ".globl exception_ud2_site\n"
         "exception_ud2_site:\n"
         "ud2\n"
         "movq %rcx, %rax\n"
+        "ret\n"
+        ".globl exception_int3_sites\n"
+        "exception_int3_sites:\n"
+        ".rept 96\n"
+        "int3\n"
+        ".endr\n"
+        ".globl exception_int3_end\n"
+        "exception_int3_end:\n"
+        "movq %rcx, %rax\n"
         "ret\n");
 
 static const ULONGLONG cookie = 0x12345678abcdef01ULL;
 static volatile LONG handled;
+static volatile LONG breakpoints;
 
 static LONG CALLBACK handler(EXCEPTION_POINTERS *p)
 {
+    if (p->ExceptionRecord->ExceptionCode == EXCEPTION_BREAKPOINT)
+    {
+        ULONG_PTR at = (ULONG_PTR)p->ExceptionRecord->ExceptionAddress;
+        if (at < (ULONG_PTR)exception_int3_sites || at >= (ULONG_PTR)exception_int3_end ||
+            p->ContextRecord->Rcx != cookie ||
+            (p->ContextRecord->Rip != at && p->ContextRecord->Rip != at + 1))
+            return EXCEPTION_CONTINUE_SEARCH;
+        /* Accept either breakpoint context convention, resuming only after
+         * the exact intentional one-byte trap in this test's code range. */
+        p->ContextRecord->Rip = at + 1;
+        InterlockedIncrement(&breakpoints);
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
     if (p->ExceptionRecord->ExceptionCode != EXCEPTION_ILLEGAL_INSTRUCTION)
         return EXCEPTION_CONTINUE_SEARCH;
     if (p->ExceptionRecord->ExceptionAddress != (void *)exception_ud2_site ||
@@ -87,6 +112,12 @@ static int run_test(void)
     ok = check_exception("before data protection change") &&
          protect_probe(ntdll, 8) && check_exception("after 8-byte data protection change") &&
          protect_probe(ntdll, 1) && check_exception("after 1-byte data protection change");
+    if (ok)
+    {
+        LONG before = breakpoints;
+        ok = exception_int3_sites(cookie) == cookie && breakpoints == before + 96;
+        puts(ok ? "PASS: 96 distinct handled guest breakpoints" : "FAIL: guest breakpoint progress");
+    }
     RemoveVectoredExceptionHandler(veh);
     return ok;
 }
