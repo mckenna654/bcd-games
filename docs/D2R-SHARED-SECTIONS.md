@@ -144,3 +144,51 @@ with exactly one handled fault. All tests repeat in a child process. An
 unexpected native context fails the test instead of skipping an instruction.
 This candidate still needs the iPhone regression and D2R launch test; successful
 host checks and IPA compilation alone do not establish D2R compatibility.
+
+## Inaccessible emulator probe (follow-up to 8e2a70b)
+
+The 21 October D2R test and the 22 October standalone regression both reach
+`libarm64ecfex.dll+0x116694`: the optional fast-forward probe at `ExitToX64`
+reads an inaccessible destination. The first ntdll probe recovers, but this
+second native probe still leaks its ARM64 PC to the guest exception handler.
+The standalone test rejects that context and terminates; it does not pass.
+
+The Wine follow-up is opt-in. Open the selected entry's **Options > Game config**
+and add this line, preserving its other settings:
+
+```ini
+env.MADEIRA_D2R_PROBE_RECOVERY = 1
+```
+
+Enable it for the standalone regression entry as well as D2R, and restart the
+BCD session after changing it. It defaults off and is not a global recommended
+setting. This candidate includes other earlier experimental changes; it is not
+an upstream release or proof that those changes are ready to merge.
+
+Wine recognises only the three target loads in the known optional FFS prefix,
+using the emulator's exported `ExitToX64` address, a full instruction signature
+and matching forward mismatch branches. No module RVA is hardcoded. On a read
+AV in those instructions, it preserves every context field except PC and resumes
+at exported `DispatchJump`. That dispatcher pushes the return address exactly
+once, checks the existing EC bitmap, and enters the emulator without inspecting
+the inaccessible target. The page remains protected. A real guest exception must
+still have the guest address/RIP, so the test can restore access and retry.
+Unknown instruction profiles, unrelated PCs, EC targets, guard/write/execute
+faults, pre-init, non-iOS and in-emulation faults retain the exception path.
+FEX source and binaries are unchanged by this correction.
+
+Run `CC=clang python3 tests/host/check-ec-probe-fallback.py` (also runs the new
+`check-ec-emulator-probe.py`). Its sanitized host checks use the real unmodified
+assembly prefix; with Unicorn installed they also execute the existing
+DispatchJump and verify arguments, one stack push and InSimulation at entry.
+`--runtime` additionally requires both recovery markers in rebuilt ntdll and
+checks the original labelled probe ABI. Build the PE runtime from source with
+the pinned LLVM-Mingw version and use the existing macOS IPA workflow. Do not
+commit prebuilt DLLs. Preserve the previously documented four optional Wine DLLs
+when packaging; do not silently regress the release's component set.
+
+Device acceptance: enable the option for `ntdll-data-exception-x64.exe` in a
+fresh session. Require the inaccessible-entry PASS, child PASS and final
+`ntdll-data-exception: PASS`. Only then test D2R separately through Dock. Expect
+`[ec-emulator-probe-fallback]` when the second protected probe is encountered.
+Host checks and a successful PE build do not establish phone success or gameplay.

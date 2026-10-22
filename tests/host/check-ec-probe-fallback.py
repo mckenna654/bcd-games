@@ -7,6 +7,7 @@ import re
 import struct
 import subprocess
 import tempfile
+import sys
 
 root = Path(__file__).resolve().parents[2]
 source = (root / 'wine/dlls/ntdll/signal_arm64ec.c').read_text()
@@ -99,9 +100,9 @@ with tempfile.TemporaryDirectory() as tmp:
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--runtime', action='store_true', help='also verify rebuilt ntdll probe/exit instructions')
 if parser.parse_args().runtime:
-    tools = root / 'toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin'
-    unstripped = root / 'wine/build-arm64ec/dlls/ntdll/arm64ec-windows/ntdll.dll'
-    image = (root / 'app/Madeira/arm64ec-windows/ntdll.dll').read_bytes()
+    tools = Path(os.environ.get('MINGW', root / 'toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin'))
+    unstripped = Path(os.environ.get('NTDLL_UNSTRIPPED', root / 'wine/build-arm64ec/dlls/ntdll/arm64ec-windows/ntdll.dll'))
+    image = Path(os.environ.get('NTDLL_BUNDLED', root / 'app/Madeira/arm64ec-windows/ntdll.dll')).read_bytes()
     symbols = subprocess.check_output([str(tools / 'llvm-nm'), '-n', str(unstripped)], text=True)
     pe, = struct.unpack_from('<I', image, 0x3c)
     image_base, = struct.unpack_from('<Q', image, pe + 24 + 24)
@@ -134,4 +135,10 @@ if parser.parse_args().runtime:
         raise SystemExit('Exit-thunk selection no longer matches native probe recovery')
     if b'[ec-probe-fallback]' not in image:
         raise SystemExit('Bundled ntdll is missing native probe recovery')
+    if b'[ec-emulator-probe-fallback]' not in image:
+        raise SystemExit('Bundled ntdll is missing opt-in emulator-probe recovery')
     print(f'PASS: rebuilt ntdll probe RVA {begin-image_base:#x}..{end-image_base:#x} and exit-thunk ABI')
+
+# The second optional probe in the emulator is part of the same device path.
+# Keep its regression mandatory when the existing CI invokes this check.
+subprocess.run([sys.executable, str(root / 'tests/host/check-ec-emulator-probe.py')], check=True)

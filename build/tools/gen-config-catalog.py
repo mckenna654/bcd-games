@@ -105,6 +105,12 @@ OVERLAY = {
                         "pool: reusable 3 seconds later, once no thread runs in them. Before, they stayed in use "
                         "until Madeira closed, and a game started after many such exits got 16 MB code buffers and "
                         "ran slowly. 0 keeps them in use, as before."},
+    "env.MADEIRA_D2R_PROBE_RECOVERY": {"category": "Memory & JIT pool", "title": "D2R protected-entry recovery (experimental)",
+                "kind": "bool", "default": "0", "sources": ["wine/dlls/ntdll/signal_arm64ec.c"],
+                "note": "Default off. Enable only for D2R or the ntdll-data-exception regression test. "
+                        "An inaccessible target in the emulator's optional code inspection enters normal "
+                        "emulation with its page protection preserved. This is experimental and does not "
+                        "establish D2R compatibility. Set it in this game's own settings and restart the session."},
     "env.MADEIRA_X64_IMAGE_NOCOPY": {"category": "Memory & JIT pool", "title": "Pure-x64 images without a JIT-pool copy",
                 "kind": "bool", "default": "0",
                 "note": "Default off. 1: an x64-only image (not ARM64EC hybrid, not a Wine builtin) in a 64-bit "
