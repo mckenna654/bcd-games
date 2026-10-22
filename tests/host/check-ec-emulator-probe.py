@@ -160,7 +160,10 @@ int main(void)
     c = directory / 'test.c'
     exe = directory / 'test'
     c.write_text(program)
-    subprocess.run([os.environ.get('CC', 'clang'), '-std=gnu11', '-Wall', '-Wextra', '-Werror',
+    # The IPA workflow puts LLVM-Mingw first on PATH. Its clang can assemble
+    # AArch64 above, but does not ship the host ASan/UBSan runtime. Use the
+    # native compiler, as the other host fixtures do; keep sanitizers enabled.
+    subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu11', '-Wall', '-Wextra', '-Werror',
                     '-fsanitize=address,undefined', str(c), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 
