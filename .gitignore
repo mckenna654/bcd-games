@@ -196,3 +196,7 @@ app/Madeira/arm64ec-windows/dock-notices.txt
 # madeira-bcd fork-only smoke tests (bcd-smoke/build.sh output; built in CI, never committed)
 bcd-smoke/out/
 app/Madeira/arm64ec-windows/bcd-smoke-*.exe
+
+# Claude Code (personal/local files)
+.claude/settings.local.json
+.claude/.deps-installed.sha256
